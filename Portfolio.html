@@ -60,6 +60,8 @@
     background: radial-gradient(circle, rgba(255,90,31,0.10), rgba(255,90,31,0) 70%);
     z-index: 0;
     pointer-events: none;
+    transform: translateY(calc(var(--scrollY, 0) * 0.12px)) translateX(calc(var(--scrollY, 0) * -0.03px));
+    will-change: transform;
   }
   .hero::after{
     content: "";
@@ -70,7 +72,24 @@
     background: radial-gradient(circle, rgba(106,91,246,0.08), rgba(106,91,246,0) 70%);
     z-index: 0;
     pointer-events: none;
+    transform: translateY(calc(var(--scrollY, 0) * -0.08px)) translateX(calc(var(--scrollY, 0) * 0.04px));
+    will-change: transform;
   }
+  .hero-spotlight{
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .4s ease;
+    background: radial-gradient(
+      circle at var(--mx, 50%) var(--my, 30%),
+      rgba(255,120,60,0.10),
+      rgba(106,91,246,0.06) 32%,
+      transparent 55%
+    );
+  }
+  .hero-spotlight.is-active{ opacity: 1; }
 
   .site-header{
     position: fixed;
@@ -80,6 +99,16 @@
     justify-content: center;
     padding: 20px 24px;
     pointer-events: none;
+  }
+  .scroll-progress{
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), #6a5bf6);
+    z-index: 60;
+    pointer-events: none;
+    transition: width .1s linear;
   }
   .nav-shell{
     position: relative;
@@ -634,16 +663,48 @@
     border-radius: 999px;
   }
 
-  /* ---------- SCROLL-REVEAL SYSTEM ---------- */
+  /* ---------- SCROLL-REVEAL SYSTEM (3D perspective + blur, like modern scroll-driven sites) ---------- */
   .reveal{
     opacity: 0;
-    transform: translateY(26px);
-    transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1);
+    transform: perspective(1200px) translateY(46px) rotateX(-9deg) scale(.96);
+    filter: blur(6px);
+    transition:
+      opacity .9s cubic-bezier(.16,1,.3,1),
+      transform .9s cubic-bezier(.16,1,.3,1),
+      filter .9s cubic-bezier(.16,1,.3,1);
     transition-delay: var(--delay, 0s);
+    will-change: transform, opacity, filter;
   }
   .reveal.is-visible{
     opacity: 1;
-    transform: translateY(0);
+    transform: perspective(1200px) translateY(0) rotateX(0deg) scale(1);
+    filter: blur(0px);
+  }
+
+  /* alternating tilt direction for repeating grid/row items — cards feel like they're settling into place from either side */
+  .stack-card.reveal,
+  .service-row.reveal,
+  .t-item.reveal{
+    transform: perspective(1200px) translateY(46px) rotateX(-8deg) rotateY(-7deg) scale(.96);
+  }
+  .stack-card.reveal:nth-child(even),
+  .service-row.reveal:nth-child(even){
+    transform: perspective(1200px) translateY(46px) rotateX(-8deg) rotateY(7deg) scale(.96);
+  }
+  .stack-card.reveal.is-visible,
+  .service-row.reveal.is-visible,
+  .t-item.reveal.is-visible{
+    transform: perspective(1200px) translateY(0) rotateX(0deg) rotateY(0deg) scale(1);
+  }
+
+  /* section header rule draws in from the left once its row is revealed */
+  .about-head .rule{
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform .9s cubic-bezier(.16,1,.3,1) .25s;
+  }
+  .about-head.is-visible .rule{
+    transform: scaleX(1);
   }
 
   @keyframes dotPop{
@@ -1101,14 +1162,14 @@
     position: absolute;
     top: 0; left: 0; right: 0;
     opacity: 0;
-    transform: translateY(14px);
+    transform: perspective(1000px) translateY(18px) rotateX(-6deg) scale(.985);
     pointer-events: none;
-    transition: opacity .4s ease, transform .4s ease;
+    transition: opacity .5s cubic-bezier(.16,1,.3,1), transform .5s cubic-bezier(.16,1,.3,1);
   }
   .project-panel.is-active{
     position: relative;
     opacity: 1;
-    transform: translateY(0);
+    transform: perspective(1000px) translateY(0) rotateX(0deg) scale(1);
     pointer-events: auto;
   }
 
@@ -1391,6 +1452,8 @@
 </head>
 <body>
 
+<div class="scroll-progress" id="scroll-progress"></div>
+
 <header class="site-header" id="site-header">
   <div class="nav-shell" id="nav-shell">
     <nav aria-label="Primary">
@@ -1409,6 +1472,7 @@
 </header>
 
 <div class="hero" id="home">
+  <div class="hero-spotlight" id="hero-spotlight"></div>
   <div class="stage" id="stage">
     <div class="hero-inner">
 
@@ -2049,6 +2113,69 @@
       });
       wrap.addEventListener('mouseleave', function(){
         mock.style.transform = 'rotateX(0deg) rotateY(0deg)';
+      });
+    });
+  })();
+
+  // ---- scroll-linked parallax depth for the hero background blobs + top progress bar ----
+  (function(){
+    var progress = document.getElementById('scroll-progress');
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var ticking = false;
+    function update(){
+      if (!reduceMotion){
+        document.documentElement.style.setProperty('--scrollY', window.scrollY);
+      }
+      if (progress){
+        var doc = document.documentElement;
+        var max = doc.scrollHeight - doc.clientHeight;
+        var pct = max > 0 ? (window.scrollY / max) * 100 : 0;
+        progress.style.width = pct + '%';
+      }
+      ticking = false;
+    }
+    window.addEventListener('scroll', function(){
+      if (!ticking){
+        requestAnimationFrame(update);
+        ticking = true;
+      }
+    }, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  })();
+
+  // ---- cursor spotlight glow in the hero ----
+  (function(){
+    var hero = document.getElementById('home');
+    var glow = document.getElementById('hero-spotlight');
+    if (!hero || !glow) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    hero.addEventListener('mouseenter', function(){ glow.classList.add('is-active'); });
+    hero.addEventListener('mouseleave', function(){ glow.classList.remove('is-active'); });
+    hero.addEventListener('mousemove', function(e){
+      var rect = hero.getBoundingClientRect();
+      var mx = ((e.clientX - rect.left) / rect.width) * 100;
+      var my = ((e.clientY - rect.top) / rect.height) * 100;
+      glow.style.setProperty('--mx', mx + '%');
+      glow.style.setProperty('--my', my + '%');
+    });
+  })();
+
+  // ---- magnetic buttons: CTAs gently pull toward the cursor while hovered ----
+  (function(){
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    document.querySelectorAll('.cta, .btn-ghost').forEach(function(btn){
+      var rect;
+      btn.addEventListener('mouseenter', function(){ rect = btn.getBoundingClientRect(); });
+      btn.addEventListener('mousemove', function(e){
+        if (!rect) rect = btn.getBoundingClientRect();
+        var px = (e.clientX - rect.left) / rect.width - 0.5;
+        var py = (e.clientY - rect.top) / rect.height - 0.5;
+        btn.style.transform = 'translate(' + (px * 10) + 'px,' + (py * 10 - 3) + 'px)';
+      });
+      btn.addEventListener('mouseleave', function(){
+        btn.style.transform = '';
       });
     });
   })();
